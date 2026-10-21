@@ -270,3 +270,5 @@ textarea{resize:vertical}
 .ok{color:var(--pos);display:grid;place-items:center;width:34px}
 #toast.undo{pointer-events:auto;cursor:pointer}
 .set-row .icon-btn{flex:none;color:var(--muted)}
+.hero .free.neg{color:var(--neg)}
+.hint-l{padding:0 0 14px;margin-top:-10px;font-size:13px}

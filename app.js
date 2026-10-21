@@ -4,7 +4,7 @@ if (window.top !== window.self) { document.documentElement.classList.add('framed
 
 const $ = s => document.querySelector(s);
 const main = $('#main'), ov = $('#overlay');
-const APP_VERSION = 2, PIN_LEN = 6, ITER = 600000, LOCK_HIDDEN_MS = 30000, LOCK_IDLE_MS = 180000;
+const APP_VERSION = 3, PIN_LEN = 6, ITER = 600000, LOCK_HIDDEN_MS = 30000, LOCK_IDLE_MS = 180000;
 const ACC_TYPES = {cash:'Efectivo', debit:'Tarjeta de débito', invest:'Inversión'};
 const COLORS = ['#3D7BD9','#2FA37A','#D9893D','#9A5CD6','#D9534F','#3DB2C2','#C9A227','#7A8696'];
 const CATS = {
@@ -143,7 +143,7 @@ function cleanData(d){ d = d && typeof d === 'object' ? d : {};
   const b = d.budget && typeof d.budget === 'object' ? d.budget : {}, cats = {};
   if (b.cats && typeof b.cats === 'object') Object.entries(b.cats).forEach(([k, v]) => { if (CAT[k] && num(v) > 0) cats[k] = num(v); });
   const fixed = (Array.isArray(d.fixed) ? d.fixed : []).filter(f => f && ID_RE.test(f.id) && str(f.name, 60).trim() && num(f.amount) > 0).map(f => ({id:f.id, name:str(f.name, 60).trim(), amount:num(f.amount), day:Math.min(31, Math.max(1, parseInt(f.day, 10) || 1)), cat:CATS.exp.some(c => c[0] === f.cat) ? f.cat : 'servicios', acc:ids.has(f.acc) ? f.acc : null, paid:/^\d{4}-\d{2}$/.test(f.paid || '') ? f.paid : '', active:f.active !== false})).slice(0, 60);
-  const goals = (Array.isArray(d.goals) ? d.goals : []).filter(g => g && ID_RE.test(g.id) && str(g.name, 60).trim() && num(g.target) > 0).map(g => ({id:g.id, name:str(g.name, 60).trim(), target:num(g.target), deadline:/^\d{4}-\d{2}$/.test(g.deadline || '') ? g.deadline : '', moves:(Array.isArray(g.moves) ? g.moves : []).filter(m => m && DATE_RE.test(m.d) && num(m.a) !== null).map(m => ({d:m.d, a:num(m.a)})).slice(-500), done:!!g.done})).slice(0, 30);
+  const goals = (Array.isArray(d.goals) ? d.goals : []).filter(g => g && ID_RE.test(g.id) && str(g.name, 60).trim() && num(g.target) > 0).map(g => ({id:g.id, name:str(g.name, 60).trim(), target:num(g.target), deadline:/^\d{4}-\d{2}$/.test(g.deadline || '') ? g.deadline : '', moves:(Array.isArray(g.moves) ? g.moves : []).filter(m => m && DATE_RE.test(m.d) && num(m.a) !== null).map(m => ({d:m.d, a:num(m.a)})).slice(-500), done:!!g.done, inAcc:!!g.inAcc})).slice(0, 30);
   const quick = (Array.isArray(d.quick) ? d.quick : []).filter(q => q && ID_RE.test(q.id) && str(q.label, 40).trim() && num(q.amount) > 0).map(q => ({id:q.id, label:str(q.label, 40).trim(), amount:num(q.amount), cat:CATS.exp.some(c => c[0] === q.cat) ? q.cat : 'otros', acc:ids.has(q.acc) ? q.acc : null})).slice(0, 20);
   return {v:2, accounts, txs, budget:{total:num(b.total) > 0 ? num(b.total) : null, cats}, fixed, goals, quick}; }
 const goalSaved = g => round2(g.moves.reduce((s, m) => s + m.a, 0));
@@ -211,8 +211,9 @@ function budgetCard(m){ const b = data.budget; if (!b.total) return `<button cla
   return `<button class="budget" data-act="goSummary"><div class="budget-top"><span>Presupuesto de ${MONTHS[+m.slice(5)-1]}</span><b>${money(spent)} <small>de ${money(b.total)}</small></b></div><div class="bar-track"><i class="${pct >= 100 ? 'over' : pct >= 85 ? 'warn' : ''}" data-w="${pct.toFixed(1)}"></i></div><p>${left >= 0 ? `Te quedan ${money(left)}${m === monthKey() && left > 0 ? `, unos ${money(left / daysLeft)} por día` : ''}.` : `Te pasaste por ${money(-left)}.`}</p></button>`; }
 function viewHome(){ let h = topBar(); const accs = activeAccs(), inv = accs.filter(a => a.type === 'invest');
   const avail = available(), invTotal = round2(inv.reduce((s,a) => s + investInfo(a).value, 0));
-  const pend = round2(fixedPending().reduce((s,f) => s + f.amount, 0)), apart = round2(data.goals.filter(g => !g.done).reduce((s,g) => s + Math.max(0, goalSaved(g)), 0));
-  h += `<div class="hero"><span>Disponible</span><b>${money(avail)}</b>${pend || apart ? `<small class="free">Libre ${money(round2(avail - pend - apart))}, después de ${[pend ? 'pagos fijos' : '', apart ? 'lo apartado para metas' : ''].filter(Boolean).join(' y ')}</small>` : ''}${inv.length ? `<small>Con inversiones: ${money(round2(avail + invTotal))}</small>` : ''}</div>`;
+  const pend = round2(fixedPending().reduce((s,f) => s + f.amount, 0)), apart = round2(data.goals.filter(g => !g.done && g.inAcc).reduce((s,g) => s + Math.max(0, goalSaved(g)), 0));
+  h += `<div class="hero"><span>Disponible</span><b>${money(avail)}</b>${pend || apart ? (() => { const free = round2(avail - pend - apart), why = [pend ? 'pagos fijos pendientes' : '', apart ? 'lo apartado para metas' : ''].filter(Boolean).join(' y ');
+    return free >= 0 ? `<small class="free">Libre ${money(free)}, después de ${why}</small>` : `<small class="free neg">Tus ${[pend ? 'pagos fijos pendientes' : '', apart ? 'metas' : ''].filter(Boolean).join(' y ')} superan tu disponible por ${money(-free)}</small>`; })() : ''}${inv.length ? `<small>Con inversiones: ${money(round2(avail + invTotal))}</small>` : ''}</div>`;
   h += `<div class="accs">${accs.map(a => { const v = accValue(a), ii = a.type === 'invest' ? investInfo(a) : null; return `<button class="acc" data-acc="${a.id}"><span class="acc-ic" data-c="${a.color}">${accIcon(a.type)}</span><span class="acc-name">${esc(a.name)}</span><b>${money(v)}</b>${ii && ii.invested ? `<small class="${ii.gain >= 0 ? 'pos' : 'neg'}">${money(ii.gain, true)} (${hideAmounts ? '••' : (ii.pct >= 0 ? '+' : '') + ii.pct.toFixed(1)} %)</small>` : `<small>${ACC_TYPES[a.type]}</small>`}</button>`; }).join('')}<button class="acc add" data-act="newAcc">${ic('plus',22)}<span>Agregar cuenta</span></button></div>`;
   if (data.quick.length) h += `<h2 class="section">Gastos frecuentes</h2><div class="quick">${data.quick.map(q => `<button class="quick-btn" data-quick="${q.id}"><i data-c="${CAT[q.cat].c}"></i>${esc(q.label)} <b>${money(q.amount)}</b></button>`).join('')}</div>`;
   h += budgetCard(monthKey());
@@ -257,7 +258,7 @@ function viewGoal(){ const g = data.goals.find(x => x.id === view.id); if (!g){ 
   <div class="hero"><span>Llevas</span><b>${money(sv)}</b><small>de ${money(g.target)}${g.deadline ? `, para ${monthName(g.deadline).toLowerCase()}` : ''}</small></div>
   <div class="bar-track goal-bar"><i data-w="${pct.toFixed(1)}" class="${pct >= 100 ? 'done' : ''}"></i></div><p class="fine">${goalHint(g)}</p>
   <div class="two-btn"><button class="btn btn-primary" data-act="goalAdd">Apartar dinero</button><button class="btn btn-secondary" data-act="goalSub">Sacar dinero</button></div>
-  <p class="fine">El dinero apartado no sale de tus cuentas: solo se reserva, y en Inicio verás cuánto te queda libre.</p>
+  <p class="fine">${g.inAcc ? 'Este dinero está dentro de tus cuentas: se reserva, y en Inicio se descuenta de lo que te queda libre.' : 'Este dinero está guardado aparte, fuera de tus cuentas de la app, así que no se descuenta de tu disponible.'}</p>
   ${pct >= 100 ? `<button class="btn btn-secondary" data-act="goalDone">Marcar como cumplida y liberar el dinero</button>` : ''}
   ${g.moves.length ? `<h2 class="section">Historial</h2><div class="box">${[...g.moves].reverse().slice(0, 30).map(m => `<div class="row"><span>${esc(dayLabel(m.d))}</span><b class="${m.a >= 0 ? 'pos' : ''}">${money(m.a, true)}</b></div>`).join('')}</div>` : ''}`; }
 function viewGoalForm(){ const d = draft, edit = data.goals.some(g => g.id === d.id);
@@ -265,6 +266,7 @@ function viewGoalForm(){ const d = draft, edit = data.goals.some(g => g.id === d
   <label class="field"><span>Nombre</span><input id="g_name" value="${esc(d.name)}" maxlength="60" placeholder="Viaje, teléfono nuevo, fondo de emergencia…" ${NO_SPELL}><em class="err" id="e_gname"></em></label>
   <label class="field"><span>¿Cuánto quieres juntar?</span><div class="money"><input id="g_target" type="text" inputmode="decimal" value="${d.target || ''}" placeholder="0.00" ${NO_SPELL}></div><em class="err" id="e_gtarget"></em></label>
   <label class="field"><span>¿Para cuándo? (opcional)</span><input id="g_deadline" type="month" value="${d.deadline || ''}" min="${monthKey()}"></label>
+  <label class="check"><input type="checkbox" id="g_inacc" ${d.inAcc ? 'checked' : ''}> El dinero de esta meta está dentro de mis cuentas de la app</label><p class="fine hint-l">Déjalo sin marcar si lo guardas aparte, por ejemplo en otra cuenta de ahorro. Así no se descuenta de tu disponible.</p>
   ${edit ? '' : `<label class="field"><span>¿Ya tienes algo ahorrado para esto? (opcional)</span><div class="money"><input id="g_start" type="text" inputmode="decimal" placeholder="0.00" ${NO_SPELL}></div></label>`}
   ${edit ? `<button class="btn btn-danger-text mt" data-act="delGoal">Eliminar meta</button>` : ''}`; }
 function amountSheet(title, text, ok){ return new Promise(res => { sheetRes = res; openOverlay(`<div class="sheet" role="dialog" aria-modal="true"><h2>${esc(title)}</h2><p>${esc(text)}</p><label class="amount"><span>$</span><input id="s_amount" type="text" inputmode="decimal" placeholder="0.00" ${NO_SPELL}></label><em class="err center-t" id="e_s"></em><button class="btn btn-primary" data-act="sheetAmount">${esc(ok)}</button><button class="btn btn-ghost" data-act="confirmNo">Cancelar</button></div>`, 'dim'); setTimeout(() => { const i = $('#s_amount'); if (i) i.focus(); }, 80); }); }
@@ -408,13 +410,14 @@ const A = {
     if (ex) Object.assign(ex, rec); else data.fixed.push(rec); data = cleanData(data); await saveData(); draft = null; toast('Pago fijo guardado'); back(); },
   async toggleFixed(){ const f = data.fixed.find(x => x.id === draft.id); if (!f) return; f.active = !f.active; await saveData(); draft = null; toast(f.active ? 'Pago reactivado' : 'Pago pausado'); back(); },
   async delFixed(){ if (!await confirmBox('¿Eliminar este pago fijo?', 'Los gastos que ya registraste se quedan.', 'Eliminar')) return; data.fixed = data.fixed.filter(f => f.id !== draft.id); await saveData(); draft = null; toast('Pago eliminado'); back(); },
-  newGoal(){ draft = {id:null, name:'', target:null, deadline:''}; go({name:'goalForm'}); },
+  newGoal(){ draft = {id:null, name:'', target:null, deadline:'', inAcc:false}; go({name:'goalForm'}); },
   editGoal(){ const g = data.goals.find(x => x.id === view.id); if (!g) return; draft = Object.assign({}, g); go({name:'goalForm'}); },
   async saveGoal(){ const name = $('#g_name').value.trim(), target = num($('#g_target').value), dl = $('#g_deadline').value;
     if (!name) return void ($('#e_gname').textContent = 'Escribe un nombre.'); if (!(target > 0)) return void ($('#e_gtarget').textContent = 'Escribe cuánto quieres juntar.');
     const ex = data.goals.find(g => g.id === draft.id);
-    if (ex) Object.assign(ex, {name, target, deadline:/^\d{4}-\d{2}$/.test(dl) ? dl : ''});
-    else { const st = num(($('#g_start') || {}).value); data.goals.push({id:uid(), name, target, deadline:/^\d{4}-\d{2}$/.test(dl) ? dl : '', moves:st > 0 ? [{d:todayKey(), a:st}] : [], done:false}); }
+    const inAcc = $('#g_inacc').checked;
+    if (ex) Object.assign(ex, {name, target, inAcc, deadline:/^\d{4}-\d{2}$/.test(dl) ? dl : ''});
+    else { const st = num(($('#g_start') || {}).value); data.goals.push({id:uid(), name, target, deadline:/^\d{4}-\d{2}$/.test(dl) ? dl : '', moves:st > 0 ? [{d:todayKey(), a:st}] : [], done:false, inAcc}); }
     data = cleanData(data); await saveData(); draft = null; toast('Meta guardada'); back(); },
   async delGoal(){ if (!await confirmBox('¿Eliminar esta meta?', 'El dinero apartado vuelve a contar como libre. Tus cuentas no cambian.', 'Eliminar')) return; data.goals = data.goals.filter(g => g.id !== draft.id); await saveData(); draft = null; resetNav(); view = {name:'home'}; tab = 'home'; render(); toast('Meta eliminada'); },
   async goalAdd(){ const g = data.goals.find(x => x.id === view.id); if (!g) return; const v = await amountSheet('Apartar dinero', `Para «${g.name}».`, 'Apartar'); if (!(v > 0)) return; g.moves.push({d:todayKey(), a:v}); await saveData(); render(); toast(goalSaved(g) >= g.target ? '¡Cumpliste tu meta!' : 'Dinero apartado'); },
